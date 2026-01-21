@@ -1,0 +1,16 @@
+project_id = "lbuorigavlaiyoswtqhu"
+
+[functions.runs]
+verify_jwt = false
+
+[functions.run-events]
+verify_jwt = false
+
+[functions.patches]
+verify_jwt = false
+
+[functions.runner]
+verify_jwt = false
+
+[functions.admin]
+verify_jwt = false

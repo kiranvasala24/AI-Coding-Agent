@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate design tokens
+        run: npx tsx scripts/validate-tokens.ts
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || 'placeholder-key' }}
+          VITE_DEMO_MODE_ENABLED: 'true'
+          VITE_APP_VERSION: ${{ github.ref_name }}
+          VITE_COMMIT_SHA: ${{ github.sha }}
+          VITE_BUILD_TIME: ${{ github.event.head_commit.timestamp }}
+          VITE_ENV: 'staging'
+
+      - name: Check bundle size
+        run: |
+          echo "Bundle sizes:"
+          ls -lh dist/assets/*.js 2>/dev/null | head -10 || echo "No JS bundles found"
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high || echo "::warning::Security vulnerabilities found"

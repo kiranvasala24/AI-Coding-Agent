@@ -1,0 +1,126 @@
+name: Daily Cleanup
+
+on:
+  schedule:
+    # Run daily at 3:00 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: 'Number of days to retain (1-30)'
+        required: false
+        default: '7'
+      environment:
+        description: 'Environment to clean'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  cleanup-staging:
+    if: github.event_name == 'schedule' || github.event.inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cleanup staging database
+        id: cleanup
+        run: |
+          RETENTION_DAYS="${{ github.event.inputs.retention_days || '7' }}"
+          
+          echo "Cleaning up staging (retention: ${RETENTION_DAYS} days)..."
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.STAGING_SUPABASE_URL }}/functions/v1/admin/cleanup" \
+            -H "Content-Type: application/json" \
+            -H "x-admin-token: ${{ secrets.STAGING_ADMIN_TOKEN }}" \
+            -d "{\"retentionDays\": ${RETENTION_DAYS}}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "Response: $BODY"
+          echo "Status: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Cleanup failed with status $HTTP_CODE"
+            exit 1
+          fi
+          
+          # Extract deletion counts for summary
+          DELETED_RUNS=$(echo "$BODY" | jq -r '.deleted.runs // 0')
+          DELETED_EVENTS=$(echo "$BODY" | jq -r '.deleted.events // 0')
+          DELETED_PATCHES=$(echo "$BODY" | jq -r '.deleted.patches // 0')
+          DELETED_RATE_LIMITS=$(echo "$BODY" | jq -r '.deleted.rateLimits // 0')
+          
+          echo "deleted_runs=$DELETED_RUNS" >> $GITHUB_OUTPUT
+          echo "deleted_events=$DELETED_EVENTS" >> $GITHUB_OUTPUT
+          
+          echo "::notice::Staging cleanup: $DELETED_RUNS runs, $DELETED_EVENTS events, $DELETED_PATCHES patches deleted"
+
+      - name: Fetch stats after cleanup
+        run: |
+          echo "Fetching post-cleanup stats..."
+          
+          STATS=$(curl -s -X GET \
+            "${{ secrets.STAGING_SUPABASE_URL }}/functions/v1/admin/stats" \
+            -H "x-admin-token: ${{ secrets.STAGING_ADMIN_TOKEN }}")
+          
+          echo "Stats: $STATS"
+          
+          TOTAL_RUNS=$(echo "$STATS" | jq -r '.totalRuns // 0')
+          OLDEST_RUN=$(echo "$STATS" | jq -r '.oldestRunDate // "none"')
+          
+          echo "::notice::Remaining: $TOTAL_RUNS runs, oldest: $OLDEST_RUN"
+
+  cleanup-production:
+    if: github.event.inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Cleanup production database
+        id: cleanup
+        run: |
+          RETENTION_DAYS="${{ github.event.inputs.retention_days || '7' }}"
+          
+          echo "Cleaning up production (retention: ${RETENTION_DAYS} days)..."
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.PROD_SUPABASE_URL }}/functions/v1/admin/cleanup" \
+            -H "Content-Type: application/json" \
+            -H "x-admin-token: ${{ secrets.PROD_ADMIN_TOKEN }}" \
+            -d "{\"retentionDays\": ${RETENTION_DAYS}}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "Response: $BODY"
+          echo "Status: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Cleanup failed with status $HTTP_CODE"
+            exit 1
+          fi
+          
+          # Extract deletion counts for summary
+          DELETED_RUNS=$(echo "$BODY" | jq -r '.deleted.runs // 0')
+          DELETED_EVENTS=$(echo "$BODY" | jq -r '.deleted.events // 0')
+          DELETED_PATCHES=$(echo "$BODY" | jq -r '.deleted.patches // 0')
+          
+          echo "::notice::Production cleanup: $DELETED_RUNS runs, $DELETED_EVENTS events, $DELETED_PATCHES patches deleted"
+
+      - name: Fetch stats after cleanup
+        run: |
+          echo "Fetching post-cleanup stats..."
+          
+          STATS=$(curl -s -X GET \
+            "${{ secrets.PROD_SUPABASE_URL }}/functions/v1/admin/stats" \
+            -H "x-admin-token: ${{ secrets.PROD_ADMIN_TOKEN }}")
+          
+          echo "Stats: $STATS"
+          
+          TOTAL_RUNS=$(echo "$STATS" | jq -r '.totalRuns // 0')
+          OLDEST_RUN=$(echo "$STATS" | jq -r '.oldestRunDate // "none"')
+          
+          echo "::notice::Remaining: $TOTAL_RUNS runs, oldest: $OLDEST_RUN"

@@ -23,38 +23,56 @@ jobs:
   cleanup-staging:
     if: github.event_name == 'schedule' || github.event.inputs.environment == 'staging'
     runs-on: ubuntu-latest
+    env:
+      STAGING_SUPABASE_URL: https://htltgvowrzvdnpmbxufu.supabase.co
+      STAGING_ADMIN_TOKEN: ${ 49f810460176b146e0566f7662d5e68909ef48e59e904975cc563fdcd3643ec7 }
+      RETENTION_DAYS_INPUT: ${{ github.event.inputs.retention_days || '7' }}
+
     steps:
       - name: Cleanup staging database
-        id: cleanup
-        env:
-          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          STAGING_ADMIN_TOKEN: ${{ secrets.STAGING_ADMIN_TOKEN }}
-          RETENTION_DAYS_INPUT: ${{ github.event.inputs.retention_days }}
         run: |
           set -euo pipefail
 
           RETENTION_DAYS="${RETENTION_DAYS_INPUT:-7}"
-          # Normalize URL (strip trailing slash + whitespace/newlines)
+
+          # Normalize URL and token (CRITICAL FIX)
           BASE_URL="$(printf '%s' "${STAGING_SUPABASE_URL}" | tr -d '\r\n' | xargs)"
           BASE_URL="${BASE_URL%/}"
+          ADMIN_TOKEN="$(printf '%s' "${STAGING_ADMIN_TOKEN}" | tr -d '\r\n' | xargs)"
 
-          if [ -z "${BASE_URL}" ]; then
+          if [ -z "$BASE_URL" ]; then
             echo "::error::STAGING_SUPABASE_URL is empty"
             exit 1
           fi
 
-          if [ -z "${STAGING_ADMIN_TOKEN}" ]; then
+          if [ -z "$ADMIN_TOKEN" ]; then
             echo "::error::STAGING_ADMIN_TOKEN is empty"
             exit 1
           fi
 
-          CLEANUP_URL="${BASE_URL}/functions/v1/admin/cleanup"
           echo "Cleaning up staging (retention: ${RETENTION_DAYS} days)..."
-          echo "Cleanup URL: ${CLEANUP_URL}"
+          echo "Cleanup URL: ${BASE_URL}/functions/v1/admin/cleanup"
 
-          RESPONSE="$(curl -sS -w "\n%{http_code}" -X POST "${CLEANUP_URL}" \
+          # ---- TOKEN VALIDATION STEP ----
+          echo "Validating admin token..."
+          STATS_RESPONSE="$(curl -sS -w "\n%{http_code}" \
+            -H "x-admin-token: ${ADMIN_TOKEN}" \
+            "${BASE_URL}/functions/v1/admin/stats")"
+
+          STATS_CODE="$(echo "$STATS_RESPONSE" | tail -n1)"
+          STATS_BODY="$(echo "$STATS_RESPONSE" | sed '$d')"
+
+          if [ "$STATS_CODE" != "200" ]; then
+            echo "::error::Admin token validation failed (${STATS_CODE})"
+            echo "$STATS_BODY"
+            exit 1
+          fi
+
+          # ---- CLEANUP ----
+          RESPONSE="$(curl -sS -w "\n%{http_code}" -X POST \
+            "${BASE_URL}/functions/v1/admin/cleanup" \
             -H "Content-Type: application/json" \
-            -H "x-admin-token: ${STAGING_ADMIN_TOKEN}" \
+            -H "x-admin-token: ${ADMIN_TOKEN}" \
             -d "{\"retentionDays\": ${RETENTION_DAYS}}")"
 
           HTTP_CODE="$(echo "$RESPONSE" | tail -n1)"
@@ -68,118 +86,54 @@ jobs:
             exit 1
           fi
 
-          # Extract deletion counts for summary
           DELETED_RUNS="$(echo "$BODY" | jq -r '.deleted.runs // 0')"
           DELETED_EVENTS="$(echo "$BODY" | jq -r '.deleted.events // 0')"
           DELETED_PATCHES="$(echo "$BODY" | jq -r '.deleted.patches // 0')"
           DELETED_RATE_LIMITS="$(echo "$BODY" | jq -r '.deleted.rateLimits // 0')"
 
-          echo "deleted_runs=$DELETED_RUNS" >> "$GITHUB_OUTPUT"
-          echo "deleted_events=$DELETED_EVENTS" >> "$GITHUB_OUTPUT"
-
-          echo "::notice::Staging cleanup: $DELETED_RUNS runs, $DELETED_EVENTS events, $DELETED_PATCHES patches, $DELETED_RATE_LIMITS rate_limits deleted"
-
-      - name: Fetch stats after cleanup
-        env:
-          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-          STAGING_ADMIN_TOKEN: ${{ secrets.STAGING_ADMIN_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          BASE_URL="$(printf '%s' "${STAGING_SUPABASE_URL}" | tr -d '\r\n' | xargs)"
-          BASE_URL="${BASE_URL%/}"
-          STATS_URL="${BASE_URL}/functions/v1/admin/stats"
-
-          echo "Fetching post-cleanup stats..."
-          echo "Stats URL: ${STATS_URL}"
-
-          STATS="$(curl -sS -X GET "${STATS_URL}" \
-            -H "x-admin-token: ${STAGING_ADMIN_TOKEN}")"
-
-          echo "Stats: $STATS"
-
-          TOTAL_RUNS="$(echo "$STATS" | jq -r '.totalRuns // 0')"
-          OLDEST_RUN="$(echo "$STATS" | jq -r '.oldestRunDate // "none"')"
-
-          echo "::notice::Remaining: $TOTAL_RUNS runs, oldest: $OLDEST_RUN"
+          echo "::notice::Staging cleanup complete → \
+          runs=$DELETED_RUNS, events=$DELETED_EVENTS, patches=$DELETED_PATCHES, rate_limits=$DELETED_RATE_LIMITS"
 
   cleanup-production:
     if: github.event.inputs.environment == 'production'
     runs-on: ubuntu-latest
     environment: production
+    env:
+      PROD_SUPABASE_URL: https://htltgvowrzvdnpmbxufu.supabase.co
+      PROD_ADMIN_TOKEN: ${49f810460176b146e0566f7662d5e68909ef48e59e904975cc563fdcd3643ec7}
+      RETENTION_DAYS_INPUT: ${{ github.event.inputs.retention_days || '7' }}
+
     steps:
       - name: Cleanup production database
-        id: cleanup
-        env:
-          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
-          PROD_ADMIN_TOKEN: ${{ secrets.PROD_ADMIN_TOKEN }}
-          RETENTION_DAYS_INPUT: ${{ github.event.inputs.retention_days }}
         run: |
           set -euo pipefail
 
           RETENTION_DAYS="${RETENTION_DAYS_INPUT:-7}"
-          # Normalize URL (strip trailing slash + whitespace/newlines)
+
           BASE_URL="$(printf '%s' "${PROD_SUPABASE_URL}" | tr -d '\r\n' | xargs)"
           BASE_URL="${BASE_URL%/}"
+          ADMIN_TOKEN="$(printf '%s' "${PROD_ADMIN_TOKEN}" | tr -d '\r\n' | xargs)"
 
-          if [ -z "${BASE_URL}" ]; then
-            echo "::error::PROD_SUPABASE_URL is empty"
+          if [ -z "$BASE_URL" ] || [ -z "$ADMIN_TOKEN" ]; then
+            echo "::error::Production secrets missing"
             exit 1
           fi
 
-          if [ -z "${PROD_ADMIN_TOKEN}" ]; then
-            echo "::error::PROD_ADMIN_TOKEN is empty"
-            exit 1
-          fi
-
-          CLEANUP_URL="${BASE_URL}/functions/v1/admin/cleanup"
           echo "Cleaning up production (retention: ${RETENTION_DAYS} days)..."
-          echo "Cleanup URL: ${CLEANUP_URL}"
 
-          RESPONSE="$(curl -sS -w "\n%{http_code}" -X POST "${CLEANUP_URL}" \
+          RESPONSE="$(curl -sS -w "\n%{http_code}" -X POST \
+            "${BASE_URL}/functions/v1/admin/cleanup" \
             -H "Content-Type: application/json" \
-            -H "x-admin-token: ${PROD_ADMIN_TOKEN}" \
+            -H "x-admin-token: ${ADMIN_TOKEN}" \
             -d "{\"retentionDays\": ${RETENTION_DAYS}}")"
 
           HTTP_CODE="$(echo "$RESPONSE" | tail -n1)"
           BODY="$(echo "$RESPONSE" | sed '$d')"
 
-          echo "Response: $BODY"
-          echo "Status: $HTTP_CODE"
-
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Cleanup failed with status $HTTP_CODE"
+            echo "::error::Production cleanup failed ($HTTP_CODE)"
+            echo "$BODY"
             exit 1
           fi
 
-          # Extract deletion counts for summary
-          DELETED_RUNS="$(echo "$BODY" | jq -r '.deleted.runs // 0')"
-          DELETED_EVENTS="$(echo "$BODY" | jq -r '.deleted.events // 0')"
-          DELETED_PATCHES="$(echo "$BODY" | jq -r '.deleted.patches // 0')"
-          DELETED_RATE_LIMITS="$(echo "$BODY" | jq -r '.deleted.rateLimits // 0')"
-
-          echo "::notice::Production cleanup: $DELETED_RUNS runs, $DELETED_EVENTS events, $DELETED_PATCHES patches, $DELETED_RATE_LIMITS rate_limits deleted"
-
-      - name: Fetch stats after cleanup
-        env:
-          PROD_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
-          PROD_ADMIN_TOKEN: ${{ secrets.PROD_ADMIN_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          BASE_URL="$(printf '%s' "${PROD_SUPABASE_URL}" | tr -d '\r\n' | xargs)"
-          BASE_URL="${BASE_URL%/}"
-          STATS_URL="${BASE_URL}/functions/v1/admin/stats"
-
-          echo "Fetching post-cleanup stats..."
-          echo "Stats URL: ${STATS_URL}"
-
-          STATS="$(curl -sS -X GET "${STATS_URL}" \
-            -H "x-admin-token: ${PROD_ADMIN_TOKEN}")"
-
-          echo "Stats: $STATS"
-
-          TOTAL_RUNS="$(echo "$STATS" | jq -r '.totalRuns // 0')"
-          OLDEST_RUN="$(echo "$STATS" | jq -r '.oldestRunDate // "none"')"
-
-          echo "::notice::Remaining: $TOTAL_RUNS runs, oldest: $OLDEST_RUN"
+          echo "::notice::Production cleanup successful"

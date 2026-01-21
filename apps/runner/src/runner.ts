@@ -25,6 +25,18 @@ interface RunContext {
   startedAt: number;
 }
 
+interface ToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  startedAt: string;
+  finishedAt?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  resultSummary?: string;
+}
+
+type SearchResult = { file: string } & Record<string, unknown>;
+
 let currentRun: RunContext | null = null;
 let isProcessing = false;
 
@@ -47,6 +59,7 @@ export async function executeRun(runId: string, task: string) {
 
   const cleanup: (() => void)[] = [];
   currentRun = { runId, task, cleanup, startedAt: startTime };
+<<<<<<< HEAD
 
   const toolCalls: Array<{
     id: string;
@@ -58,6 +71,11 @@ export async function executeRun(runId: string, task: string) {
     resultSummary?: string;
   }> = [];
 
+=======
+  
+  const toolCalls: ToolCall[] = [];
+  
+>>>>>>> ab3a66df863a55131b205b04cdc6195f17a9ba98
   try {
     // Emit RUN_STARTED
     await postEvents(runId, [{
@@ -96,13 +114,18 @@ export async function executeRun(runId: string, task: string) {
     const keywords = task.split(' ')
       .filter(w => w.length > 3 && !['the', 'and', 'for', 'with'].includes(w.toLowerCase()))
       .slice(0, 2);
+<<<<<<< HEAD
 
     let searchResults: Array<{ file: string; line: number; content: string }> = [];
+=======
+    
+    let searchResults: SearchResult[] = [];
+>>>>>>> ab3a66df863a55131b205b04cdc6195f17a9ba98
     for (const keyword of keywords) {
       const results = await emitToolCall(runId, 'repo.search', { query: keyword }, toolCalls, async () => {
         return await search(keyword, '*.{ts,tsx}');
       });
-      searchResults = searchResults.concat(results || []);
+      searchResults = searchResults.concat((results as unknown as SearchResult[]) || []);
     }
 
     // Tool 4: Open top matching file if found
@@ -143,10 +166,15 @@ export async function executeRun(runId: string, task: string) {
         exitCode: r.exitCode,
         logs: [],
       })),
-      startedAt: currentRun.startedAt ? new Date(currentRun.startedAt).toISOString() : undefined,
+      startedAt: currentRun?.startedAt ? new Date(currentRun.startedAt).toISOString() : undefined,
       finishedAt: new Date().toISOString(),
+<<<<<<< HEAD
     };
 
+=======
+    }; 
+    
+>>>>>>> ab3a66df863a55131b205b04cdc6195f17a9ba98
     await updateRun(runId, { verification: verificationData });
 
     // ========================================
@@ -263,6 +291,7 @@ async function emitToolCall<T>(
   runId: string,
   tool: string,
   input: Record<string, unknown>,
+<<<<<<< HEAD
   toolCalls: Array<{
     id: string;
     name: string;
@@ -272,12 +301,20 @@ async function emitToolCall<T>(
     status: 'pending' | 'running' | 'completed' | 'failed';
     resultSummary?: string;
   }>,
+=======
+  toolCalls: ToolCall[],
+>>>>>>> ab3a66df863a55131b205b04cdc6195f17a9ba98
   execute: () => Promise<T>
 ): Promise<T> {
   const callId = `${tool}-${Date.now()}`;
   const startedAt = new Date().toISOString();
+<<<<<<< HEAD
 
   const toolCall = {
+=======
+  
+  const toolCall: ToolCall = {
+>>>>>>> ab3a66df863a55131b205b04cdc6195f17a9ba98
     id: callId,
     name: tool,
     args: input,

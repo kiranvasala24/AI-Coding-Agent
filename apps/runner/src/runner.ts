@@ -6,13 +6,13 @@
  */
 
 import { config } from './config';
-import { 
-  claimRun, 
-  getQueuedRuns, 
-  postEvents, 
+import {
+  claimRun,
+  getQueuedRuns,
+  postEvents,
   updateRun,
   createPatch,
-  supabase 
+  supabase
 } from './supabase';
 import { listFiles, search, openFile, getRepoInfo } from './tools/repo';
 import { runVerification } from './tools/verify';
@@ -36,18 +36,18 @@ export async function executeRun(runId: string, task: string) {
     console.log('[runner] Already processing a run, skipping');
     return;
   }
-  
+
   isProcessing = true;
   const startTime = Date.now();
-  
+
   console.log(`\n${'='.repeat(60)}`);
   console.log(`[runner] Starting run: ${runId}`);
   console.log(`[runner] Task: ${task}`);
   console.log('='.repeat(60));
-  
+
   const cleanup: (() => void)[] = [];
   currentRun = { runId, task, cleanup, startedAt: startTime };
-  
+
   const toolCalls: Array<{
     id: string;
     name: string;
@@ -57,13 +57,13 @@ export async function executeRun(runId: string, task: string) {
     status: 'pending' | 'running' | 'completed' | 'failed';
     resultSummary?: string;
   }> = [];
-  
+
   try {
     // Emit RUN_STARTED
     await postEvents(runId, [{
       type: 'RUN_STARTED',
-      payload: { 
-        runnerId: config.runnerId, 
+      payload: {
+        runnerId: config.runnerId,
         task,
         version: config.version,
         capabilities: {
@@ -73,38 +73,38 @@ export async function executeRun(runId: string, task: string) {
         },
       },
     }]);
-    
+
     // Update status to running
     await updateRun(runId, { status: 'running' });
-    
+
     // ========================================
     // Phase 1: Gather context with repo tools
     // ========================================
     console.log('\n[runner] Phase 1: Gathering repository context...');
-    
+
     // Tool 1: Get repo info
     const repoInfo = await emitToolCall(runId, 'repo.getInfo', {}, toolCalls, async () => {
       return await getRepoInfo();
     });
-    
+
     // Tool 2: List source files
     const fileList = await emitToolCall(runId, 'repo.listFiles', { pattern: 'src/**/*.{ts,tsx}' }, toolCalls, async () => {
       return await listFiles('src/**/*.{ts,tsx}');
     });
-    
+
     // Tool 3: Search for task-relevant files
     const keywords = task.split(' ')
       .filter(w => w.length > 3 && !['the', 'and', 'for', 'with'].includes(w.toLowerCase()))
       .slice(0, 2);
-    
-    let searchResults: any[] = [];
+
+    let searchResults: Array<{ file: string; line: number; content: string }> = [];
     for (const keyword of keywords) {
       const results = await emitToolCall(runId, 'repo.search', { query: keyword }, toolCalls, async () => {
         return await search(keyword, '*.{ts,tsx}');
       });
       searchResults = searchResults.concat(results || []);
     }
-    
+
     // Tool 4: Open top matching file if found
     if (searchResults.length > 0) {
       const topFile = searchResults[0].file;
@@ -112,29 +112,29 @@ export async function executeRun(runId: string, task: string) {
         return await openFile(topFile, 1, 50);
       });
     }
-    
+
     // Update run with tool calls
-    await updateRun(runId, { 
+    await updateRun(runId, {
       tool_calls: toolCalls,
       impacted_files: fileList?.files?.slice(0, 10) || [],
     });
-    
+
     // ========================================
     // Phase 2: Run verification
     // ========================================
     console.log('\n[runner] Phase 2: Running verification...');
-    
+
     await updateRun(runId, {
       status: 'verifying',
-      verification: { 
-        overallStatus: 'running', 
+      verification: {
+        overallStatus: 'running',
         commands: [],
         startedAt: new Date().toISOString(),
       },
     });
-    
+
     const verifyResult = await runVerification(runId);
-    
+
     const verificationData = {
       overallStatus: verifyResult.passed ? 'passed' : 'failed',
       commands: verifyResult.results.map(r => ({
@@ -146,19 +146,19 @@ export async function executeRun(runId: string, task: string) {
       startedAt: currentRun.startedAt ? new Date(currentRun.startedAt).toISOString() : undefined,
       finishedAt: new Date().toISOString(),
     };
-    
+
     await updateRun(runId, { verification: verificationData });
-    
+
     // ========================================
     // Phase 3: Generate patch (scripted for now)
     // ========================================
     if (verifyResult.passed) {
       console.log('\n[runner] Phase 3: Generating patch...');
-      
+
       // Create a simple scripted patch for testing
       const patchSummary = `Update based on task: ${task.slice(0, 50)}`;
       const timestamp = new Date().toISOString().split('T')[0];
-      
+
       const filesChanged = [
         {
           path: 'README.md',
@@ -173,7 +173,7 @@ export async function executeRun(runId: string, task: string) {
           ],
         },
       ];
-      
+
       // Create patch in database
       const { id: patchId } = await createPatch(
         runId,
@@ -181,10 +181,10 @@ export async function executeRun(runId: string, task: string) {
         filesChanged,
         `Automated patch generated for task: ${task}`
       );
-      
+
       await postEvents(runId, [{
         type: 'PATCH_PROPOSED',
-        payload: { 
+        payload: {
           patchId,
           summary: patchSummary,
           filesChanged: filesChanged.length,
@@ -192,32 +192,32 @@ export async function executeRun(runId: string, task: string) {
           totalDeletions: 0,
         },
       }]);
-      
+
       console.log(`[runner] Created patch ${patchId}`);
-      
+
       // Update run with patch reference
-      await updateRun(runId, { 
+      await updateRun(runId, {
         status: 'awaiting_approval',
         patches: [{ patchId, summary: patchSummary }],
       });
-      
+
       await postEvents(runId, [{
         type: 'NEEDS_APPROVAL',
-        payload: { 
+        payload: {
           patchId,
           reason: 'Verification passed, patch ready for review',
         },
       }]);
-      
+
       // Start watching for patch approvals
       const stopWatching = await watchForApprovals(runId);
       cleanup.push(stopWatching);
-      
+
       console.log('[runner] Waiting for approval...');
     } else {
       console.log('\n[runner] Verification failed, not creating patch');
-      
-      await updateRun(runId, { 
+
+      await updateRun(runId, {
         status: 'failed',
         error: {
           message: 'Verification failed',
@@ -225,27 +225,27 @@ export async function executeRun(runId: string, task: string) {
           recoverable: false,
         },
       });
-      
+
       await postEvents(runId, [{
         type: 'RUN_FAILED',
         payload: { reason: 'Verification failed' },
       }]);
     }
-    
+
   } catch (error) {
     console.error('[runner] Run failed:', error);
-    
+
     await postEvents(runId, [{
       type: 'ERROR',
-      payload: { 
+      payload: {
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       },
     }]);
-    
-    await updateRun(runId, { 
+
+    await updateRun(runId, {
       status: 'failed',
-      error: { 
+      error: {
         message: error instanceof Error ? error.message : String(error),
         phase: 'execution',
         recoverable: false,
@@ -263,12 +263,20 @@ async function emitToolCall<T>(
   runId: string,
   tool: string,
   input: Record<string, unknown>,
-  toolCalls: Array<any>,
+  toolCalls: Array<{
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    startedAt: string;
+    finishedAt?: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    resultSummary?: string;
+  }>,
   execute: () => Promise<T>
 ): Promise<T> {
   const callId = `${tool}-${Date.now()}`;
   const startedAt = new Date().toISOString();
-  
+
   const toolCall = {
     id: callId,
     name: tool,
@@ -276,67 +284,67 @@ async function emitToolCall<T>(
     startedAt,
     status: 'running' as const,
   };
-  
+
   toolCalls.push(toolCall);
-  
+
   await postEvents(runId, [{
     type: 'TOOL_CALLED',
-    payload: { 
-      callId, 
-      tool, 
+    payload: {
+      callId,
+      tool,
       input,
       startedAt,
     },
   }]);
-  
+
   const startTime = Date.now();
-  
+
   try {
     const result = await execute();
-    
+
     // Summarize result for logging (avoid huge payloads)
     const summary = summarizeResult(result);
     const duration = Date.now() - startTime;
-    
+
     // Update tool call in array
     Object.assign(toolCall, {
       finishedAt: new Date().toISOString(),
       status: 'completed',
       resultSummary: typeof summary === 'string' ? summary : JSON.stringify(summary).slice(0, 100),
     });
-    
+
     await postEvents(runId, [{
       type: 'TOOL_COMPLETED',
-      payload: { 
-        callId, 
-        tool, 
+      payload: {
+        callId,
+        tool,
         duration,
         result: summary,
       },
     }]);
-    
+
     console.log(`[tool] ${tool} completed in ${duration}ms`);
-    
+
     return result;
   } catch (error) {
     const duration = Date.now() - startTime;
-    
+
     Object.assign(toolCall, {
       finishedAt: new Date().toISOString(),
       status: 'failed',
       resultSummary: `Error: ${error instanceof Error ? error.message : String(error)}`,
     });
-    
+
     await postEvents(runId, [{
       type: 'TOOL_COMPLETED',
-      payload: { 
-        callId, 
-        tool, 
+      payload: {
+        callId,
+        tool,
         duration,
         error: error instanceof Error ? error.message : String(error),
       },
     }]);
-    
+
     throw error;
   }
 }
@@ -346,21 +354,21 @@ async function emitToolCall<T>(
  */
 function summarizeResult(result: unknown): unknown {
   if (result === null || result === undefined) return result;
-  
+
   if (Array.isArray(result)) {
     return {
       type: 'array',
       length: result.length,
-      preview: result.slice(0, 3).map(item => 
+      preview: result.slice(0, 3).map(item =>
         typeof item === 'object' ? JSON.stringify(item).slice(0, 50) : item
       ),
     };
   }
-  
+
   if (typeof result === 'object') {
     const obj = result as Record<string, unknown>;
     const summary: Record<string, unknown> = {};
-    
+
     for (const [key, value] of Object.entries(obj)) {
       if (typeof value === 'string' && value.length > 100) {
         summary[key] = value.slice(0, 100) + '...';
@@ -372,10 +380,10 @@ function summarizeResult(result: unknown): unknown {
         summary[key] = value;
       }
     }
-    
+
     return summary;
   }
-  
+
   return result;
 }
 
@@ -384,23 +392,23 @@ function summarizeResult(result: unknown): unknown {
  */
 export async function startRunPoller() {
   console.log('[runner] Starting run poller...');
-  
+
   const poll = async () => {
     if (currentRun || isProcessing) {
       // Already running something
       return;
     }
-    
+
     try {
       const queued = await getQueuedRuns();
-      
+
       if (queued.length > 0) {
         const run = queued[0];
         console.log(`[runner] Found queued run: ${run.id}`);
-        
+
         // Claim it via edge function (includes optimistic lock)
         const { claimed, run: claimedRun } = await claimRun(run.id);
-        
+
         if (claimed && claimedRun) {
           console.log(`[runner] Successfully claimed run ${run.id}`);
           // Execute the run
@@ -413,11 +421,11 @@ export async function startRunPoller() {
       console.error('[runner] Poll error:', error);
     }
   };
-  
+
   // Poll immediately, then on interval
   await poll();
   const interval = setInterval(poll, config.pollIntervalMs);
-  
+
   return () => clearInterval(interval);
 }
 

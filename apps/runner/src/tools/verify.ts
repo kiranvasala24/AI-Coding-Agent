@@ -6,7 +6,7 @@
  */
 
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { config } from '../config';
 import { postEvents } from '../supabase';
@@ -32,19 +32,22 @@ function getPackageManagerCommands(): {
   test: CommandConfig | null;
 } {
   const { repoPath, packageManager } = config;
-  
+
   // Check for package.json scripts
   let pkgScripts: Record<string, string> = {};
   try {
-    const pkg = require(join(repoPath, 'package.json'));
-    pkgScripts = pkg.scripts || {};
+    const pkgPath = join(repoPath, 'package.json');
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      pkgScripts = pkg.scripts || {};
+    }
   } catch {
     // No package.json
   }
-  
+
   // Check for TypeScript config
   const hasTsConfig = existsSync(join(repoPath, 'tsconfig.json'));
-  
+
   // Determine typecheck command
   let typecheck: CommandConfig | null = null;
   if (pkgScripts.typecheck) {
@@ -66,21 +69,21 @@ function getPackageManagerCommands(): {
       description: 'TypeScript check',
     };
   }
-  
+
   // Determine test command
   let test: CommandConfig | null = null;
   if (pkgScripts.test && pkgScripts.test !== 'echo "Error: no test specified" && exit 1') {
     // Check for common test runners and add --run flag for vitest
     const isVitest = pkgScripts.test.includes('vitest');
     const args = isVitest ? ['test', '--', '--run'] : ['test'];
-    
+
     test = {
       command: packageManager,
       args,
       description: 'Tests',
     };
   }
-  
+
   return { typecheck, test };
 }
 
@@ -95,18 +98,18 @@ export async function runVerifyCommand(
 ): Promise<VerifyResult> {
   const startTime = Date.now();
   const commandId = `verify-${Date.now()}`;
-  
+
   // Emit start event
   await postEvents(runId, [{
     type: 'VERIFY_STARTED',
-    payload: { 
-      command, 
+    payload: {
+      command,
       args,
       commandId,
       description: description || `${command} ${args.join(' ')}`,
     },
   }]);
-  
+
   return new Promise((resolve) => {
     const proc = spawn(command, args, {
       cwd: config.repoPath,
@@ -118,18 +121,18 @@ export async function runVerifyCommand(
       },
       timeout: config.commandTimeoutMs,
     });
-    
+
     let logBuffer: string[] = [];
     let flushTimeout: ReturnType<typeof setTimeout> | null = null;
     const MAX_CHUNK_SIZE = 1024; // ~1KB chunks
-    
+
     // Batch logs and flush periodically or when buffer gets large
     const flushLogs = async () => {
       if (logBuffer.length === 0) return;
-      
+
       const logs = logBuffer.join('');
       logBuffer = [];
-      
+
       // Split into chunks if too large
       const chunks: string[] = [];
       let remaining = logs;
@@ -141,22 +144,22 @@ export async function runVerifyCommand(
         remaining = remaining.slice(splitPoint + 1);
       }
       if (remaining) chunks.push(remaining);
-      
+
       for (const chunk of chunks) {
         await postEvents(runId, [{
           type: 'VERIFY_LOG',
-          payload: { 
-            content: chunk, 
+          payload: {
+            content: chunk,
             stream: 'mixed',
             commandId,
           },
         }]);
       }
     };
-    
+
     const scheduledFlush = () => {
       if (flushTimeout) clearTimeout(flushTimeout);
-      
+
       // Flush immediately if buffer is getting large
       const bufferSize = logBuffer.reduce((sum, s) => sum + s.length, 0);
       if (bufferSize > MAX_CHUNK_SIZE) {
@@ -165,12 +168,12 @@ export async function runVerifyCommand(
         flushTimeout = setTimeout(flushLogs, 100);
       }
     };
-    
+
     const handleOutput = (data: Buffer) => {
       const text = data.toString();
       logBuffer.push(text);
       scheduledFlush();
-      
+
       // Also log locally (line by line for readability)
       const lines = text.split('\n');
       for (const line of lines) {
@@ -179,32 +182,32 @@ export async function runVerifyCommand(
         }
       }
     };
-    
+
     proc.stdout.on('data', handleOutput);
     proc.stderr.on('data', handleOutput);
-    
+
     proc.on('close', async (code) => {
       // Final flush
       await flushLogs();
-      
+
       const duration = Date.now() - startTime;
       const exitCode = code ?? 1;
       const passed = exitCode === 0;
-      
+
       // Emit finish event
       await postEvents(runId, [{
         type: 'VERIFY_COMMAND_FINISHED',
-        payload: { 
-          command, 
+        payload: {
+          command,
           args,
           commandId,
-          exitCode, 
-          duration, 
+          exitCode,
+          duration,
           passed,
           description: description || `${command} ${args.join(' ')}`,
         },
       }]);
-      
+
       resolve({
         command: `${command} ${args.join(' ')}`.trim(),
         exitCode,
@@ -212,17 +215,17 @@ export async function runVerifyCommand(
         passed,
       });
     });
-    
+
     proc.on('error', async (err) => {
       await postEvents(runId, [{
         type: 'VERIFY_LOG',
-        payload: { 
-          content: `Error: ${err.message}\n`, 
+        payload: {
+          content: `Error: ${err.message}\n`,
           stream: 'stderr',
           commandId,
         },
       }]);
-      
+
       resolve({
         command: `${command} ${args.join(' ')}`.trim(),
         exitCode: 1,
@@ -242,51 +245,51 @@ export async function runVerification(runId: string): Promise<{
 }> {
   const results: VerifyResult[] = [];
   const commands = getPackageManagerCommands();
-  
+
   console.log(`[verify] Package manager: ${config.packageManager}`);
   console.log(`[verify] Commands detected:`, {
     typecheck: commands.typecheck?.description || 'none',
     test: commands.test?.description || 'none',
   });
-  
+
   // TypeScript check
   if (commands.typecheck) {
     console.log(`[verify] Running ${commands.typecheck.description}...`);
     const tscResult = await runVerifyCommand(
-      runId, 
-      commands.typecheck.command, 
+      runId,
+      commands.typecheck.command,
       commands.typecheck.args,
       commands.typecheck.description
     );
     results.push(tscResult);
-    
+
     if (!tscResult.passed) {
       console.log(`[verify] ${commands.typecheck.description} failed`);
     }
   } else {
     console.log('[verify] No typecheck command found, skipping');
   }
-  
+
   // Run tests
   if (commands.test) {
     console.log(`[verify] Running ${commands.test.description}...`);
     const testResult = await runVerifyCommand(
-      runId, 
-      commands.test.command, 
+      runId,
+      commands.test.command,
       commands.test.args,
       commands.test.description
     );
     results.push(testResult);
-    
+
     if (!testResult.passed) {
       console.log(`[verify] ${commands.test.description} failed`);
     }
   } else {
     console.log('[verify] No test command found, skipping');
   }
-  
+
   const allPassed = results.length > 0 && results.every(r => r.passed);
-  
+
   // Emit final verification status
   await postEvents(runId, [{
     type: 'VERIFY_FINISHED',
@@ -300,6 +303,6 @@ export async function runVerification(runId: string): Promise<{
       })),
     },
   }]);
-  
+
   return { passed: allPassed, results };
 }

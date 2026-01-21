@@ -28,20 +28,20 @@ async function withRetry<T>(
   delayMs = 1000
 ): Promise<T> {
   let lastError: Error | null = null;
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       return await fn();
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.warn(`[supabase] Attempt ${attempt + 1}/${maxRetries} failed:`, lastError.message);
-      
+
       if (attempt < maxRetries - 1) {
         await new Promise(resolve => setTimeout(resolve, delayMs * (attempt + 1)));
       }
     }
   }
-  
+
   throw lastError;
 }
 
@@ -80,24 +80,24 @@ export async function getQueuedRuns(): Promise<Array<{ id: string; task: string 
     .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(1);
-  
+
   if (error) throw error;
   return data || [];
 }
 
-export async function claimRun(runId: string): Promise<{ claimed: boolean; run?: any }> {
+export async function claimRun(runId: string): Promise<{ claimed: boolean; run?: { id: string; task: string } }> {
   const response = await fetch(`${FUNCTIONS_URL}/runner/claim-run`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({ runnerId: config.runnerId, runId }),
   });
-  
+
   if (!response.ok) {
     const body = await response.text();
     console.error(`[supabase] Claim run failed: ${response.status} - ${body}`);
     return { claimed: false };
   }
-  
+
   const data = await response.json();
   return { claimed: !!data.run, run: data.run };
 }
@@ -162,7 +162,7 @@ export async function createPatch(
 ): Promise<{ id: string }> {
   const totalAdditions = filesChanged.reduce((sum, f) => sum + f.additions, 0);
   const totalDeletions = filesChanged.reduce((sum, f) => sum + f.deletions, 0);
-  
+
   const { data, error } = await supabase
     .from("patches")
     .insert({
@@ -178,7 +178,7 @@ export async function createPatch(
     })
     .select("id")
     .single();
-  
+
   if (error) throw error;
   return { id: data.id };
 }

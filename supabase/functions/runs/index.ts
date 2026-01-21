@@ -13,30 +13,30 @@ const RATE_LIMIT = {
 };
 
 function getClientIP(req: Request): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || 
-         req.headers.get("x-real-ip") || 
-         "unknown";
+  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "unknown";
 }
 
 // DB-backed rate limiting using atomic upsert
 async function checkRateLimit(
-  supabase: any, 
+  supabase: ReturnType<typeof createClient>,
   clientIP: string
 ): Promise<{ allowed: boolean; remaining: number; resetAt: Date }> {
   const clientKey = `runs:${clientIP}`;
-  
+
   const { data, error } = await supabase.rpc("check_rate_limit", {
     p_client_key: clientKey,
     p_max_requests: RATE_LIMIT.maxRunsPerMinute,
     p_window_seconds: RATE_LIMIT.windowSeconds,
   });
-  
+
   if (error) {
     console.error("Rate limit check failed:", error);
     // Fail open but log - don't block on DB errors
     return { allowed: true, remaining: RATE_LIMIT.maxRunsPerMinute, resetAt: new Date() };
   }
-  
+
   const result = data?.[0] || { allowed: true, remaining: RATE_LIMIT.maxRunsPerMinute, reset_at: new Date() };
   return {
     allowed: result.allowed,
@@ -46,7 +46,7 @@ async function checkRateLimit(
 }
 
 // Cleanup old rate limit entries (called periodically)
-async function cleanupRateLimits(supabase: any) {
+async function cleanupRateLimits(supabase: ReturnType<typeof createClient>) {
   try {
     await supabase.rpc("cleanup_rate_limits");
   } catch (e) {
@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const pathParts = url.pathname.split("/").filter(Boolean);
-  
+
   // Remove "runs" from path to get the rest
   const runId = pathParts[1];
   const action = pathParts[2];
@@ -109,13 +109,13 @@ Deno.serve(async (req) => {
       if (!rateCheck.allowed) {
         const retryAfter = Math.ceil((rateCheck.resetAt.getTime() - Date.now()) / 1000);
         console.log(`Rate limit exceeded for IP: ${clientIP}`);
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           error: "Rate limit exceeded",
           retryAfter: Math.max(1, retryAfter),
         }), {
           status: 429,
-          headers: { 
-            ...corsHeaders, 
+          headers: {
+            ...corsHeaders,
             "Content-Type": "application/json",
             "Retry-After": String(Math.max(1, retryAfter)),
             "X-RateLimit-Remaining": "0",
@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
       }
 
       const body: CreateRunRequest = await req.json();
-      
+
       if (!body.task) {
         return new Response(JSON.stringify({ error: "Task is required" }), {
           status: 400,
@@ -134,8 +134,8 @@ Deno.serve(async (req) => {
 
       // Validate task length
       if (body.task.length > RATE_LIMIT.maxTaskLength) {
-        return new Response(JSON.stringify({ 
-          error: `Task too long. Maximum ${RATE_LIMIT.maxTaskLength} characters allowed.` 
+        return new Response(JSON.stringify({
+          error: `Task too long. Maximum ${RATE_LIMIT.maxTaskLength} characters allowed.`
         }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -165,8 +165,8 @@ Deno.serve(async (req) => {
 
       return new Response(JSON.stringify({ runId: run.id }), {
         status: 201,
-        headers: { 
-          ...corsHeaders, 
+        headers: {
+          ...corsHeaders,
           "Content-Type": "application/json",
           "X-RateLimit-Remaining": String(rateCheck.remaining),
         },
@@ -240,7 +240,7 @@ Deno.serve(async (req) => {
     // POST /runs/:id/approve - Approve or reject a run
     if (req.method === "POST" && runId && action === "approve") {
       const body: ApproveRequest = await req.json();
-      
+
       const { data: run, error: fetchError } = await supabase
         .from("runs")
         .select("status")
@@ -336,8 +336,8 @@ Deno.serve(async (req) => {
 });
 
 // Simulate a run with realistic timing
-async function simulateRun(supabase: any, runId: string) {
-  const emit = async (eventType: string, payload: any, status?: string) => {
+async function simulateRun(supabase: ReturnType<typeof createClient>, runId: string) {
+  const emit = async (eventType: string, payload: Record<string, unknown>, status?: string) => {
     await supabase.from("run_events").insert({
       run_id: runId,
       event_type: eventType,
@@ -434,7 +434,7 @@ async function simulateRun(supabase: any, runId: string) {
 
     // Verification phase with streaming logs
     await emit("VERIFY_STARTED", { commands: ["tsc --noEmit", "vitest run"] }, "verifying");
-    
+
     // Initialize verification state with proper types
     const verification: {
       commands: Array<{
@@ -470,7 +470,7 @@ async function simulateRun(supabase: any, runId: string) {
     await emit("VERIFY_LOG", { command: "tsc --noEmit", log: "✓ No type errors found", index: 0 });
     await delay(100);
     await emit("VERIFY_LOG", { command: "tsc --noEmit", log: "Compiled 42 files in 1.2s", index: 0 });
-    
+
     // Update tsc command as passed
     verification.commands[0] = {
       command: "tsc --noEmit",
@@ -510,7 +510,7 @@ async function simulateRun(supabase: any, runId: string) {
     await emit("VERIFY_LOG", { command: "vitest run", log: " Test Files  1 passed (1)", index: 1 });
     await emit("VERIFY_LOG", { command: "vitest run", log: "      Tests  3 passed (3)", index: 1 });
     await emit("VERIFY_LOG", { command: "vitest run", log: "   Duration  312ms", index: 1 });
-    
+
     // Update vitest command as passed
     verification.commands[1] = {
       command: "vitest run",
@@ -532,7 +532,7 @@ async function simulateRun(supabase: any, runId: string) {
     };
     verification.overallStatus = "passed";
     verification.finishedAt = new Date().toISOString();
-    
+
     await supabase.from("runs").update({ verification }).eq("id", runId);
     await emit("VERIFY_COMMAND_FINISHED", { command: "vitest run", status: "passed", exitCode: 0 });
     await emit("VERIFY_FINISHED", { status: "passed", duration: "1.5s" });

@@ -26,8 +26,26 @@ interface DbPatch {
   created_at: string;
 }
 
+// Database run row type
+interface DbRun {
+  id: string;
+  status: Run["status"];
+  created_at: string;
+  updated_at: string;
+  task: string;
+  plan?: Run["plan"];
+  tool_calls?: Run["toolCalls"];
+  patches?: Run["patches"];
+  verification?: Run["verification"];
+  approval?: Run["approval"];
+  risk_assessment?: Run["riskAssessment"];
+  impacted_files?: Run["impactedFiles"];
+  impacted_symbols?: Run["impactedSymbols"];
+  error?: Run["error"];
+}
+
 // Convert database row to Run type
-function dbToRun(row: any): Run {
+function dbToRun(row: DbRun): Run {
   return {
     runId: row.id,
     status: row.status,
@@ -174,7 +192,7 @@ export function subscribeToRunEvents(
   eventSource.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
-      
+
       // Skip heartbeat events
       if (data.type === "HEARTBEAT" || data.type === "CONNECTED") {
         console.log(`SSE ${data.type} for run ${runId}`);

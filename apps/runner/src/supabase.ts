@@ -82,10 +82,10 @@ export async function getQueuedRuns(): Promise<Array<{ id: string; task: string 
     .limit(1);
   
   if (error) throw error;
-  return data || [];
+  return (data as Array<{ id: string; task: string }>) || [];
 }
 
-export async function claimRun(runId: string): Promise<{ claimed: boolean; run?: any }> {
+export async function claimRun(runId: string): Promise<{ claimed: boolean; run?: unknown }> {
   const response = await fetch(`${FUNCTIONS_URL}/runner/claim-run`, {
     method: "POST",
     headers: getHeaders(),
@@ -99,7 +99,7 @@ export async function claimRun(runId: string): Promise<{ claimed: boolean; run?:
   }
   
   const data = await response.json();
-  return { claimed: !!data.run, run: data.run };
+  return { claimed: !!data.run, run: data.run as unknown };
 }
 
 export interface RunnerEvent {
@@ -156,7 +156,7 @@ export async function createPatch(
     path: string;
     additions: number;
     deletions: number;
-    diff: Array<{ type: string; content: string; lineNumber?: { old?: number; new?: number } }>;
+    diff: Array<{ type: string; content: string; lineNumber?: { old?: number; new?: number } }>;  
   }>,
   reasoning?: string
 ): Promise<{ id: string }> {
@@ -180,5 +180,6 @@ export async function createPatch(
     .single();
   
   if (error) throw error;
-  return { id: data.id };
+  const inserted = data as { id: string };
+  return { id: inserted.id };
 }

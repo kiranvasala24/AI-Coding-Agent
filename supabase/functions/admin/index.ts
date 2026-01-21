@@ -27,7 +27,7 @@ function getCorsHeaders(req: Request): Record<string, string> {
 }
 
 // Admin token for protected operations
-const ADMIN_TOKEN = Deno.env.get("ADMIN_TOKEN") || Deno.env.get("RUNNER_TOKEN");
+const ADMIN_TOKEN = Deno.env.get("49f810460176b146e0566f7662d5e68909ef48e59e904975cc563fdcd3643ec7") || Deno.env.get("RUNNER_TOKEN");
 
 // Retention settings
 const RETENTION = {
@@ -97,8 +97,8 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    Deno.env.get("https://htltgvowrzvdnpmbxufu.supabase.co")!,
+    Deno.env.get("sb_publishable_zzojJXiFXKB1aJGgHSBTcQ_7brW8hDw")!
   );
 
   try {

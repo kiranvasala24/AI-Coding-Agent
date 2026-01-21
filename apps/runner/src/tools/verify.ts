@@ -38,12 +38,7 @@ function getPackageManagerCommands(): {
   try {
     const pkgPath = join(repoPath, 'package.json');
     if (existsSync(pkgPath)) {
-<<<<<<< HEAD
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-=======
-      const raw = readFileSync(pkgPath, 'utf8');
-      const pkg = JSON.parse(raw);
->>>>>>> ab3a66df863a55131b205b04cdc6195f17a9ba98
       pkgScripts = pkg.scripts || {};
     }
   } catch {

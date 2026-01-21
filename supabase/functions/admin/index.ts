@@ -5,7 +5,7 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") || "").split(",").filte
 
 function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin");
-  
+
   // For non-browser requests (no Origin header), allow if token is valid
   if (!origin) {
     return {
@@ -13,12 +13,12 @@ function getCorsHeaders(req: Request): Record<string, string> {
       "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-token",
     };
   }
-  
+
   // For browser requests, check allowlist (or allow all if no allowlist configured)
-  const isAllowed = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.some(allowed => 
+  const isAllowed = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.some(allowed =>
     origin === allowed || origin.endsWith(`.${allowed.replace(/^https?:\/\//, '')}`)
   );
-  
+
   return {
     "Access-Control-Allow-Origin": isAllowed ? origin : "null",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-token",
@@ -44,22 +44,22 @@ function validateAdminToken(req: Request): boolean {
 
 function validateOrigin(req: Request): boolean {
   const origin = req.headers.get("Origin");
-  
+
   // Non-browser requests (curl, scripts) don't send Origin - allow them (token still required)
   if (!origin) return true;
-  
+
   // If no allowlist configured, allow all origins (token still required)
   if (ALLOWED_ORIGINS.length === 0) return true;
-  
+
   // Check against allowlist
-  return ALLOWED_ORIGINS.some(allowed => 
+  return ALLOWED_ORIGINS.some(allowed =>
     origin === allowed || origin.endsWith(`.${allowed.replace(/^https?:\/\//, '')}`)
   );
 }
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
-  
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -69,10 +69,11 @@ Deno.serve(async (req) => {
 
   // GET /admin/ping - Simple health check (NO auth required - public endpoint)
   if (req.method === "GET" && action === "ping") {
-    return new Response(JSON.stringify({ 
-      status: "ok", 
+    return new Response(JSON.stringify({
+      status: "ok",
       timestamp: new Date().toISOString(),
-      version: "1.0.0"
+      version: "1.0.0",
+      env: Deno.env.get("APP_ENV") || "production"
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -156,22 +157,29 @@ Deno.serve(async (req) => {
       const { data: rateLimitsResult } = await supabase.rpc("cleanup_rate_limits");
       const rateLimitsDeleted = rateLimitsResult || 0;
 
+      // Get remaining stats for summary
+      const [remainingRuns, oldestRemaining] = await Promise.all([
+        supabase.from("runs").select("id", { count: "exact", head: true }),
+        supabase.from("runs").select("created_at").order("created_at", { ascending: true }).limit(1).maybeSingle(),
+      ]);
+
       console.log(`Cleanup complete: ${runsDeleted} runs, ${eventsDeleted} events, ${patchesDeleted} patches, ${rateLimitsDeleted} rate limits`);
 
       return new Response(JSON.stringify({
         success: true,
         retentionDays,
         cutoffDate,
-        deletedRuns: runsDeleted || 0,
-        deletedEvents: eventsDeleted || 0,
-        deletedPatches: patchesDeleted || 0,
-        deletedRateLimits: rateLimitsDeleted,
         deleted: {
           runs: runsDeleted || 0,
           events: eventsDeleted || 0,
           patches: patchesDeleted || 0,
           rateLimits: rateLimitsDeleted,
         },
+        remaining: {
+          runs: remainingRuns.count || 0,
+          oldestRunDate: oldestRemaining.data?.created_at || null,
+        },
+        summary: `Deleted ${runsDeleted || 0} runs and ${eventsDeleted || 0} events. ${remainingRuns.count || 0} runs remain.`
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

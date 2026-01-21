@@ -128,6 +128,31 @@ Demo mode is enabled by default unless explicitly disabled.
 
 ---
 
+## How to Demo
+
+The system is designed to be easily demonstrated in two modes: **Portfolio Demo (Simulated)** and **Real Runner (Local)**.
+
+### 1. Portfolio Demo (Simulated)
+This mode allows anyone to see the full agent workflow without setting up a local environment.
+- **Access**: Navigate to `/?demo=1` on the deployed site.
+- **Workflow**:
+    1. Click **"Reset demo run"** to clean up any previous state.
+    2. Click **"Start Demo"** to trigger the simulated agent.
+    3. Watch as the agent **plans**, performs **tool calls**, streams **verification logs**, and proposes a **patch**.
+    4. Click **"Approve"** on the patch to see the final completion state.
+- **What to watch for**: Note the realistic timing, streaming logs, and the safety-first design that pauses for your approval before "applying" the change.
+
+### 2. Real Runner (Local)
+This mode shows the agent working against your real filesystem.
+- **Requirement**: A running `apps/runner` instance connected to your repository.
+- **Workflow**:
+    1. Enter a task in the input box (e.g., "Add a new utility function to src/lib/utils.ts").
+    2. Click **"Run"**.
+    3. The agent will claim the run, analyze your local code, and propose a real diff.
+- **What to watch for**: Check your local terminal to see the runner executing `tsc` or `vitest` in real-time.
+
+---
+
 ## Getting Started (Demo Mode)
 
 ```bash

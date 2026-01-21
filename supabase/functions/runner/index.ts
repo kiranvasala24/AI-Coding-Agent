@@ -25,12 +25,12 @@ function truncateLogContent(content: string): string {
 
 function sanitizePayload(payload: Record<string, unknown>): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
-  
+
   for (const [key, value] of Object.entries(payload)) {
     if (typeof value === "string") {
       // Truncate long strings
-      sanitized[key] = value.length > MAX_LOG_CONTENT_LENGTH 
-        ? value.slice(0, MAX_LOG_CONTENT_LENGTH) + "..." 
+      sanitized[key] = value.length > MAX_LOG_CONTENT_LENGTH
+        ? value.slice(0, MAX_LOG_CONTENT_LENGTH) + "..."
         : value;
     } else if (Array.isArray(value)) {
       // Cap array sizes
@@ -46,7 +46,7 @@ function sanitizePayload(payload: Record<string, unknown>): Record<string, unkno
       sanitized[key] = value;
     }
   }
-  
+
   return sanitized;
 }
 
@@ -88,9 +88,9 @@ Deno.serve(async (req) => {
     // POST /runner/heartbeat - Runner sends heartbeat
     if (req.method === "POST" && action === "heartbeat") {
       const body = await req.json();
-      const { 
-        runnerId, 
-        version, 
+      const {
+        runnerId,
+        version,
         capabilities,
         os,
         packageManager,
@@ -377,8 +377,8 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error("Runner endpoint error:", error);
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ error: message }), {
+    const message = error instanceof Error ? error.message : JSON.stringify(error);
+    return new Response(JSON.stringify({ error: message, detail: error }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

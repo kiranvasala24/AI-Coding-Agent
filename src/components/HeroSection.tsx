@@ -24,11 +24,11 @@ export function HeroSection() {
       {/* Background effects */}
       <div className="absolute inset-0 bg-gradient-hero" />
       <div className="absolute inset-0 bg-grid-pattern bg-grid-40 opacity-[0.02]" />
-      
+
       {/* Animated glow orbs */}
       <div className="absolute top-1/4 -left-32 w-64 h-64 bg-primary/20 rounded-full blur-[100px] animate-pulse-slow" />
       <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-terminal-purple/10 rounded-full blur-[120px] animate-pulse-slow" />
-      
+
       <div className="container mx-auto px-6 relative z-10">
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           {/* Left column - Text content */}
@@ -48,7 +48,7 @@ export function HeroSection() {
                 <br />
                 <span className="text-foreground">Codebases</span>
               </h1>
-              
+
               <p className="text-lg text-muted-foreground max-w-lg leading-relaxed">
                 A local-first AI agent that understands your repo, proposes scoped changes,
                 validates them with tests, and requires your approval before applying.
@@ -69,12 +69,27 @@ export function HeroSection() {
 
             {/* CTAs */}
             <div className="flex flex-wrap gap-4">
-              <Button variant="hero" size="xl">
+              <Button variant="hero" size="xl" onClick={() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })}>
                 Get Started
                 <ArrowRight className="w-5 h-5" />
               </Button>
-              <Button variant="outline" size="xl">
-                View on GitHub
+              <Button
+                variant="outline"
+                size="xl"
+                onClick={() => {
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('demo', '1');
+                  window.history.replaceState({}, '', url.toString());
+                  document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' });
+                  window.location.reload(); // Reload to trigger the demo mode logic in DemoSection
+                }}
+              >
+                Try Interactive Demo
+              </Button>
+              <Button variant="ghost" size="xl" asChild>
+                <a href="https://github.com/kiranvasala24/AI-Coding-Agent" target="_blank" rel="noreferrer">
+                  View Source
+                </a>
               </Button>
             </div>
           </div>

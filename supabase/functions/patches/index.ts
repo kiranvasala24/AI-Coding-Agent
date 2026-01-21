@@ -2,8 +2,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-runner-token",
 };
+
+const RUNNER_TOKEN = Deno.env.get("RUNNER_TOKEN") || "demo-runner-token";
+
+function validateRunnerToken(req: Request): boolean {
+  const token = req.headers.get("x-runner-token");
+  return !token || token === RUNNER_TOKEN; // Allow non-token requests (from browser) but validate if token is present
+}
 
 // Patch constraints
 const CONSTRAINTS = {
@@ -99,13 +106,20 @@ Deno.serve(async (req) => {
   const pathParts = url.pathname.split("/").filter(Boolean);
   const patchId = pathParts[1];
   const action = pathParts[2];
+  // Validate runner token if provided
+  if (!validateRunnerToken(req)) {
+    return new Response(JSON.stringify({ error: "Unauthorized", message: "Invalid x-runner-token" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     // GET /patches - List all patches (optional runId filter)
     if (req.method === "GET" && !patchId) {
       const runId = url.searchParams.get("runId");
       let query = supabase.from("patches").select("*").order("created_at", { ascending: false });
-      
+
       if (runId) {
         query = query.eq("run_id", runId);
       }
@@ -142,7 +156,7 @@ Deno.serve(async (req) => {
 
         console.log(`Patch rejected for run ${body.runId}:`, validation.errors);
 
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           error: "Patch validation failed",
           errors: validation.errors,
           warnings: validation.warnings,
@@ -180,8 +194,8 @@ Deno.serve(async (req) => {
       await supabase.from("run_events").insert({
         run_id: body.runId,
         event_type: "PATCH_PROPOSED",
-        payload: { 
-          patchId: patch.id, 
+        payload: {
+          patchId: patch.id,
           summary: body.summary,
           filesCount: body.filesChanged.length,
           additions: totalAdditions,
@@ -193,13 +207,13 @@ Deno.serve(async (req) => {
       // Update run with patch reference
       const { data: run } = await supabase.from("runs").select("patches").eq("id", body.runId).single();
       const existingPatches = run?.patches || [];
-      await supabase.from("runs").update({ 
-        patches: [...existingPatches, { patchId: patch.id, summary: body.summary }] 
+      await supabase.from("runs").update({
+        patches: [...existingPatches, { patchId: patch.id, summary: body.summary }]
       }).eq("id", body.runId);
 
       console.log(`Created patch ${patch.id} for run ${body.runId}`);
 
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         patchId: patch.id,
         warnings: validation.warnings,
       }), {
@@ -256,7 +270,7 @@ Deno.serve(async (req) => {
 
         console.log(`Apply blocked for patch ${patchId}: not approved`);
 
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           error: "Patch not approved",
           message: "Cannot apply patch without approval. Run must be in 'approved' state.",
         }), {
@@ -267,7 +281,7 @@ Deno.serve(async (req) => {
 
       // Check if already applied
       if (patch.applied) {
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           error: "Patch already applied",
           appliedAt: patch.applied_at,
         }), {
@@ -290,7 +304,7 @@ Deno.serve(async (req) => {
           payload: { patchId, reason: "Constraint violation", errors: revalidation.errors },
         });
 
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           error: "Patch violates current constraints",
           errors: revalidation.errors,
         }), {
@@ -327,7 +341,7 @@ Deno.serve(async (req) => {
 
       console.log(`Patch ${patchId} applied successfully`);
 
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         success: true,
         patchId,
         appliedAt: now,

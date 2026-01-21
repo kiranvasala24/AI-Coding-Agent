@@ -12,7 +12,27 @@ import { applyPatch } from "@/lib/runs-client";
 import { RunnerSetupWizard } from "@/components/dashboard/RunnerSetupWizard";
 import { DemoModeBanner, RunnerOfflineBanner } from "@/components/dashboard/DemoModeBanner";
 
-// Check if demo mode is enabled via environment variable
+// Determine environment
+const IS_PROD = import.meta.env.PROD || import.meta.env.VITE_APP_ENV === "production";
+const IS_STAGING = import.meta.env.VITE_APP_ENV === "staging";
+
+// Check if demo mode is requested via URL
+const searchParams = new URLSearchParams(window.location.search);
+const hasDemoParam = searchParams.get("demo") === "1" || searchParams.get("demo") === "true";
+
+// Final demo mode default:
+// - If explicitly disabled in env, always false
+// - If staging, enabled by default
+// - If prod, only enabled if ?demo=1 is present
+// - Otherwise (dev), enabled by default if no runner online
+const DEMO_MODE_DEFAULT = import.meta.env.VITE_DEMO_MODE_ENABLED === "false"
+  ? false
+  : (IS_STAGING || hasDemoParam)
+    ? true
+    : IS_PROD
+      ? false
+      : true;
+
 const DEMO_MODE_ENABLED = import.meta.env.VITE_DEMO_MODE_ENABLED !== "false";
 
 // Preset demo tasks for quick demos
@@ -25,16 +45,16 @@ const DEMO_PRESETS = [
 
 export function DemoSection() {
   const runnerStatus = useRunnerStatus();
-  const [demoMode, setDemoMode] = useState(DEMO_MODE_ENABLED && !runnerStatus.isOnline);
+  const [demoMode, setDemoMode] = useState(DEMO_MODE_DEFAULT && (!runnerStatus.isOnline || IS_PROD || IS_STAGING));
   const [applyError, setApplyError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
-  
+
   // Real run hook (for when runner is connected)
   const realRun = useRun({ useMock: false });
-  
+
   // Simulation hook (for demo mode)
   const simulation = useDemoSimulation();
-  
+
   // Use the appropriate source based on mode
   const run = demoMode ? simulation.run : realRun.run;
   const isLoading = demoMode ? simulation.isRunning : realRun.isLoading;
@@ -42,7 +62,7 @@ export function DemoSection() {
   const handleStartDemo = async () => {
     setApplyError(null);
     const task = "Add error handling to the API client";
-    
+
     if (demoMode) {
       toast.info("Starting simulated demo...", {
         description: "This is a demo run without a local runner."
@@ -84,7 +104,7 @@ export function DemoSection() {
 
   const handleApplyPatch = async (patchId: string) => {
     setApplyError(null);
-    
+
     if (demoMode) {
       // Simulate apply in demo mode
       await new Promise(r => setTimeout(r, 500));
@@ -93,7 +113,7 @@ export function DemoSection() {
       });
       return;
     }
-    
+
     try {
       const result = await applyPatch(patchId);
       toast.success(`Patch applied successfully! ${result.filesAffected} files affected.`);
@@ -107,11 +127,27 @@ export function DemoSection() {
   const handleReset = () => {
     if (demoMode) {
       simulation.resetSimulation();
+      toast.info("Demo state cleared", {
+        description: "You can now start a new simulation."
+      });
     } else {
       realRun.reset();
+      toast.info("Live run state cleared");
     }
     setApplyError(null);
-    toast.info("Demo reset");
+  };
+
+  const handleStartPreset = (preset: typeof DEMO_PRESETS[0]) => {
+    handleReset();
+    setTimeout(() => {
+      if (demoMode) {
+        simulation.startSimulation(preset.task);
+        toast.info(`Starting demo: ${preset.label}`);
+      } else if (runnerStatus.isOnline) {
+        realRun.startRun(preset.task);
+        toast.info(`Starting live run: ${preset.label}`);
+      }
+    }, 100);
   };
 
   const handleDisableDemoMode = () => {
@@ -127,7 +163,7 @@ export function DemoSection() {
       {demoMode && run && (
         <DemoModeBanner onDisable={handleDisableDemoMode} />
       )}
-      
+
       <div className={`container mx-auto px-4 md:px-6 ${demoMode && run ? 'pt-10' : ''}`}>
         <div className="text-center mb-8 md:mb-16">
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-4">
@@ -137,7 +173,7 @@ export function DemoSection() {
             The agent generates structured plans, creates reviewable diffs,
             and clearly explains its reasoning and potential risks.
           </p>
-          
+
           {/* Mode toggle and status */}
           <div className="flex flex-wrap items-center justify-center gap-4 mb-6">
             {/* Runner status indicator */}
@@ -157,14 +193,14 @@ export function DemoSection() {
                 </span>
               )}
             </div>
-            
+
             <div className="w-px h-4 bg-border" />
-            
+
             {/* Demo mode toggle - only show if enabled */}
             {DEMO_MODE_ENABLED && (
               <div className="flex items-center gap-2">
-                <Switch 
-                  id="demo-mode" 
+                <Switch
+                  id="demo-mode"
                   checked={demoMode}
                   onCheckedChange={(checked) => {
                     setDemoMode(checked);
@@ -183,13 +219,13 @@ export function DemoSection() {
                 </Label>
               </div>
             )}
-            
+
             {!runnerStatus.isOnline && !demoMode && (
               <>
                 <div className="w-px h-4 bg-border hidden sm:block" />
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="text-xs"
                   onClick={() => setSetupOpen(true)}
                 >
@@ -199,53 +235,44 @@ export function DemoSection() {
               </>
             )}
           </div>
-          
-          {/* Demo preset buttons */}
-          {canStart && (
-            <div className="flex flex-wrap gap-2 justify-center mb-4">
-              {DEMO_PRESETS.map((preset) => (
-                <Button
-                  key={preset.label}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => {
-                    if (demoMode) {
-                      simulation.startSimulation(preset.task);
-                      toast.info(`Starting demo: ${preset.label}`);
-                    } else if (runnerStatus.isOnline) {
-                      realRun.startRun(preset.task);
-                      toast.info(`Starting live run: ${preset.label}`);
-                    }
-                  }}
-                  disabled={!demoMode && !runnerStatus.isOnline}
-                >
-                  <Zap className="w-3 h-3 mr-1" />
-                  {preset.label}
-                </Button>
-              ))}
-            </div>
-          )}
+
+          {/* Preset task buttons (Seed Flow) */}
+          <div className="flex flex-wrap gap-2 justify-center mb-8">
+            {DEMO_PRESETS.map((preset) => (
+              <Button
+                key={preset.label}
+                variant="outline"
+                size="sm"
+                className="text-xs rounded-full border-terminal-green/20 hover:border-terminal-green/50 hover:bg-terminal-green/5 transition-all"
+                onClick={() => handleStartPreset(preset)}
+                disabled={(!demoMode && !runnerStatus.isOnline) || isLoading}
+              >
+                <Zap className="w-3 h-3 mr-1 text-terminal-green" />
+                {preset.label}
+              </Button>
+            ))}
+          </div>
 
           <div className="flex flex-wrap gap-3 md:gap-4 justify-center">
-            <Button
-              variant="hero"
-              size="default"
-              className="md:text-base"
-              onClick={handleStartDemo}
-              disabled={!canStart}
-            >
-              <Play className="w-4 h-4 mr-2" />
-              {isLoading ? "Running..." : demoMode ? "Start Demo" : "Start Live Run"}
-            </Button>
-            {run && (
-              <Button variant="outline" size="default" onClick={handleReset}>
+            {canStart ? (
+              <Button
+                variant="hero"
+                size="lg"
+                className="md:px-8 group"
+                onClick={handleStartDemo}
+                disabled={isLoading}
+              >
+                <Play className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                {isLoading ? "Preparing..." : demoMode ? "Start Demo Flow" : "Start Live Run"}
+              </Button>
+            ) : run && (
+              <Button variant="outline" size="lg" onClick={handleReset} className="md:px-8">
                 <RotateCcw className="w-4 h-4 mr-2" />
-                Reset
+                Reset Demo
               </Button>
             )}
           </div>
-          
+
           {realRun.error && !demoMode && (
             <p className="text-destructive mt-4 text-sm">Error: {realRun.error.message}</p>
           )}
@@ -253,15 +280,15 @@ export function DemoSection() {
 
         {/* Offline warning when not in demo mode */}
         {!runnerStatus.isOnline && !demoMode && !run && (
-          <RunnerOfflineBanner 
+          <RunnerOfflineBanner
             onSetup={() => setSetupOpen(true)}
             className="mb-8 max-w-2xl mx-auto"
           />
         )}
 
         {run ? (
-          <RunDashboard 
-            run={run} 
+          <RunDashboard
+            run={run}
             onApprove={handleApprove}
             onReject={handleReject}
             onApplyPatch={handleApplyPatch}
@@ -270,9 +297,9 @@ export function DemoSection() {
         ) : (
           <div className="border border-border/50 rounded-xl p-6 md:p-12 text-center bg-card/30">
             <p className="text-sm md:text-base text-muted-foreground">
-              {demoMode 
+              {demoMode
                 ? 'Click "Start Demo" to see a simulated run with streaming events.'
-                : runnerStatus.isOnline 
+                : runnerStatus.isOnline
                   ? 'Click "Start Live Run" to create a real run executed by your local runner.'
                   : 'Enable Demo Mode above to see the agent in action, or connect a local runner for real execution.'
               }
@@ -280,7 +307,7 @@ export function DemoSection() {
           </div>
         )}
       </div>
-      
+
       {/* Runner Setup Wizard Dialog */}
       <RunnerSetupWizard open={setupOpen} onOpenChange={setSetupOpen} />
     </section>

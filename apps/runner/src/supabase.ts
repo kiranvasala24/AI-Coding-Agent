@@ -160,26 +160,22 @@ export async function createPatch(
   }>,
   reasoning?: string
 ): Promise<{ id: string }> {
-  const totalAdditions = filesChanged.reduce((sum, f) => sum + f.additions, 0);
-  const totalDeletions = filesChanged.reduce((sum, f) => sum + f.deletions, 0);
-
-  const { data, error } = await supabase
-    .from("patches")
-    .insert({
-      run_id: runId,
+  const response = await fetch(`${FUNCTIONS_URL}/patches`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({
+      runId,
       summary,
-      files_changed: filesChanged,
-      total_additions: totalAdditions,
-      total_deletions: totalDeletions,
+      filesChanged,
       reasoning: reasoning || null,
-      constraints_used: [],
-      approved: false,
-      applied: false,
-    })
-    .select("id")
-    .single();
+    }),
+  });
 
-  if (error) throw error;
-  const inserted = data as { id: string };
-  return { id: inserted.id };
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Create patch failed: ${response.status} - ${body}`);
+  }
+
+  const data = await response.json();
+  return { id: data.patchId };
 }

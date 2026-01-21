@@ -1,9 +1,29 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Allowed origins for browser requests
+const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") || "").split(",").filter(Boolean);
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin");
+
+  // For non-browser requests (no Origin header), allow but still subject to rate limits
+  if (!origin) {
+    return {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    };
+  }
+
+  // For browser requests, check allowlist (or allow all if no allowlist configured)
+  const isAllowed = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.some(allowed =>
+    origin === allowed || origin.endsWith(`.${allowed.replace(/^https?:\/\//, '')}`)
+  );
+
+  return {
+    "Access-Control-Allow-Origin": isAllowed ? origin : "null",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 // Rate limiting configuration
 const RATE_LIMIT = {
@@ -13,7 +33,8 @@ const RATE_LIMIT = {
 };
 
 function getClientIP(req: Request): string {
-  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+  return req.headers.get("cf-connecting-ip") ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     "unknown";
 }
@@ -65,6 +86,8 @@ interface ApproveRequest {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -169,6 +192,7 @@ Deno.serve(async (req) => {
           ...corsHeaders,
           "Content-Type": "application/json",
           "X-RateLimit-Remaining": String(rateCheck.remaining),
+          "X-RateLimit-Limit": String(RATE_LIMIT.maxRunsPerMinute),
         },
       });
     }

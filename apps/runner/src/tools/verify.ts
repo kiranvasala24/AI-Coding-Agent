@@ -6,7 +6,7 @@
  */
 
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { config } from '../config';
 import { postEvents } from '../supabase';
@@ -36,10 +36,14 @@ function getPackageManagerCommands(): {
   // Check for package.json scripts
   let pkgScripts: Record<string, string> = {};
   try {
-    const pkg = require(join(repoPath, 'package.json'));
-    pkgScripts = pkg.scripts || {};
+    const pkgPath = join(repoPath, 'package.json');
+    if (existsSync(pkgPath)) {
+      const raw = readFileSync(pkgPath, 'utf8');
+      const pkg = JSON.parse(raw);
+      pkgScripts = pkg.scripts || {};
+    }
   } catch {
-    // No package.json
+    // No package.json or invalid JSON
   }
   
   // Check for TypeScript config

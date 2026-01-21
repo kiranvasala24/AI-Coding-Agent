@@ -25,6 +25,18 @@ interface RunContext {
   startedAt: number;
 }
 
+interface ToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  startedAt: string;
+  finishedAt?: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  resultSummary?: string;
+}
+
+type SearchResult = { file: string } & Record<string, unknown>;
+
 let currentRun: RunContext | null = null;
 let isProcessing = false;
 
@@ -48,15 +60,7 @@ export async function executeRun(runId: string, task: string) {
   const cleanup: (() => void)[] = [];
   currentRun = { runId, task, cleanup, startedAt: startTime };
   
-  const toolCalls: Array<{
-    id: string;
-    name: string;
-    args: Record<string, unknown>;
-    startedAt: string;
-    finishedAt?: string;
-    status: 'pending' | 'running' | 'completed' | 'failed';
-    resultSummary?: string;
-  }> = [];
+  const toolCalls: ToolCall[] = [];
   
   try {
     // Emit RUN_STARTED
@@ -97,12 +101,12 @@ export async function executeRun(runId: string, task: string) {
       .filter(w => w.length > 3 && !['the', 'and', 'for', 'with'].includes(w.toLowerCase()))
       .slice(0, 2);
     
-    let searchResults: any[] = [];
+    let searchResults: SearchResult[] = [];
     for (const keyword of keywords) {
       const results = await emitToolCall(runId, 'repo.search', { query: keyword }, toolCalls, async () => {
         return await search(keyword, '*.{ts,tsx}');
       });
-      searchResults = searchResults.concat(results || []);
+      searchResults = searchResults.concat((results as unknown as SearchResult[]) || []);
     }
     
     // Tool 4: Open top matching file if found
@@ -143,9 +147,9 @@ export async function executeRun(runId: string, task: string) {
         exitCode: r.exitCode,
         logs: [],
       })),
-      startedAt: currentRun.startedAt ? new Date(currentRun.startedAt).toISOString() : undefined,
+      startedAt: currentRun?.startedAt ? new Date(currentRun.startedAt).toISOString() : undefined,
       finishedAt: new Date().toISOString(),
-    };
+    }; 
     
     await updateRun(runId, { verification: verificationData });
     
@@ -263,13 +267,13 @@ async function emitToolCall<T>(
   runId: string,
   tool: string,
   input: Record<string, unknown>,
-  toolCalls: Array<any>,
+  toolCalls: ToolCall[],
   execute: () => Promise<T>
 ): Promise<T> {
   const callId = `${tool}-${Date.now()}`;
   const startedAt = new Date().toISOString();
   
-  const toolCall = {
+  const toolCall: ToolCall = {
     id: callId,
     name: tool,
     args: input,

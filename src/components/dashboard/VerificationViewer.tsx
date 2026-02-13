@@ -2,11 +2,12 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import type { Verification } from "@/types/run";
 import { Terminal } from "@/components/Terminal";
-import { 
-  CheckCircle2, 
-  XCircle, 
+import {
+  CheckCircle2,
+  XCircle,
   Loader2,
-  Clock
+  Clock,
+  ShieldCheck
 } from "lucide-react";
 
 interface VerificationViewerProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -22,7 +23,7 @@ export const VerificationViewer = React.forwardRef<HTMLDivElement, VerificationV
     };
 
     return (
-      <div 
+      <div
         ref={ref}
         className={cn("rounded-lg border border-terminal-border bg-terminal-bg overflow-hidden", className)}
         {...props}
@@ -39,6 +40,10 @@ export const VerificationViewer = React.forwardRef<HTMLDivElement, VerificationV
               VERIFY
             </span>
             <span className="text-sm font-medium text-foreground">Verification</span>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-terminal-cyan/30 bg-terminal-cyan/5 text-terminal-cyan text-[10px] font-bold">
+              <ShieldCheck className="w-3 h-3" />
+              SANDBOXED
+            </div>
           </div>
           {verification.startedAt && verification.finishedAt && (
             <span className="text-xs text-muted-foreground font-mono">
@@ -77,7 +82,7 @@ export const VerificationViewer = React.forwardRef<HTMLDivElement, VerificationV
                   {isFailed && <XCircle className="w-4 h-4 text-terminal-red flex-shrink-0" />}
                   {isRunning && <Loader2 className="w-4 h-4 text-terminal-yellow animate-spin flex-shrink-0" />}
                   {cmd.status === 'pending' && <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
-                  
+
                   {cmd.exitCode !== undefined && (
                     <span className={cn(
                       "text-xs font-mono ml-auto flex-shrink-0",
@@ -87,7 +92,7 @@ export const VerificationViewer = React.forwardRef<HTMLDivElement, VerificationV
                     </span>
                   )}
                 </div>
-                
+
                 {cmd.logs.length > 0 && (
                   <Terminal
                     lines={terminalLines}

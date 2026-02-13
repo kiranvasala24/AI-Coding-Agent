@@ -24,6 +24,19 @@ interface CommandConfig {
   description: string;
 }
 
+const COMMAND_ALLOWLIST = [
+  'npm',
+  'yarn',
+  'pnpm',
+  'bun',
+  'npx',
+  'tsc',
+  'vitest',
+  'jest',
+  'prettier',
+  'eslint'
+];
+
 /**
  * Get package manager specific commands
  */
@@ -99,6 +112,22 @@ export async function runVerifyCommand(
   const startTime = Date.now();
   const commandId = `verify-${Date.now()}`;
 
+  // Validate command against allowlist
+  if (!COMMAND_ALLOWLIST.includes(command.toLowerCase())) {
+    const error = `Command rejected: '${command}' is not in the allowlist.`;
+    console.error(`[verify] ${error}`);
+    await postEvents(runId, [{
+      type: 'ERROR',
+      payload: { message: error },
+    }]);
+    return {
+      command,
+      exitCode: 1,
+      duration: 0,
+      passed: false
+    };
+  }
+
   // Emit start event
   await postEvents(runId, [{
     type: 'VERIFY_STARTED',
@@ -107,20 +136,46 @@ export async function runVerifyCommand(
       args,
       commandId,
       description: description || `${command} ${args.join(' ')}`,
+      sandboxed: config.dockerEnabled,
     },
   }]);
 
   return new Promise((resolve) => {
-    const proc = spawn(command, args, {
-      cwd: config.repoPath,
-      shell: true,
-      env: {
-        ...process.env,
-        FORCE_COLOR: '0', // Disable color codes for cleaner logs
-        CI: 'true',
-      },
-      timeout: config.commandTimeoutMs,
-    });
+    let proc;
+
+    if (config.dockerEnabled) {
+      // Execute in Docker sandbox
+      const containerName = `agent-sandbox-${runId.slice(0, 8)}-${commandId.slice(-4)}`;
+      const dockerArgs = [
+        'run', '--rm',
+        '--name', containerName,
+        '--network', 'none', // Disable network
+        '-v', `${config.repoPath}:/workspace:ro`, // Mount repo as read-only
+        '--workdir', '/workspace',
+        'node:20-slim', // Lightweight base image
+        'sh', '-c', `${command} ${args.join(' ')}`
+      ];
+
+      console.log(`[verify] Sandboxing in Docker: ${containerName}`);
+      proc = spawn('docker', dockerArgs, {
+        cwd: config.repoPath,
+        shell: true,
+        env: process.env,
+        timeout: config.commandTimeoutMs,
+      });
+    } else {
+      // Execute locally
+      proc = spawn(command, args, {
+        cwd: config.repoPath,
+        shell: true,
+        env: {
+          ...process.env,
+          FORCE_COLOR: '0', // Disable color codes for cleaner logs
+          CI: 'true',
+        },
+        timeout: config.commandTimeoutMs,
+      });
+    }
 
     let logBuffer: string[] = [];
     let flushTimeout: ReturnType<typeof setTimeout> | null = null;

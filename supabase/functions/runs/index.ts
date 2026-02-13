@@ -4,24 +4,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") || "").split(",").filter(Boolean);
 
 function getCorsHeaders(req: Request): Record<string, string> {
-  const origin = req.headers.get("Origin");
-
-  // For non-browser requests (no Origin header), allow but still subject to rate limits
-  if (!origin) {
-    return {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    };
-  }
-
-  // For browser requests, check allowlist (or allow all if no allowlist configured)
-  const isAllowed = ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.some(allowed =>
-    origin === allowed || origin.endsWith(`.${allowed.replace(/^https?:\/\//, '')}`)
-  );
-
   return {
-    "Access-Control-Allow-Origin": isAllowed ? origin : "null",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Origin": req.headers.get("Origin") || "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-runner-token",
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
   };
 }
 

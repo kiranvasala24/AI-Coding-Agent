@@ -11,6 +11,7 @@ import { useState } from "react";
 import { applyPatch } from "@/lib/runs-client";
 import { RunnerSetupWizard } from "@/components/dashboard/RunnerSetupWizard";
 import { DemoModeBanner, RunnerOfflineBanner } from "@/components/dashboard/DemoModeBanner";
+import { Textarea } from "@/components/ui/textarea";
 
 // Determine environment
 const IS_PROD = import.meta.env.PROD || import.meta.env.VITE_APP_ENV === "production";
@@ -46,6 +47,7 @@ const DEMO_PRESETS = [
 export function DemoSection() {
   const runnerStatus = useRunnerStatus();
   const [demoMode, setDemoMode] = useState(DEMO_MODE_DEFAULT && (!runnerStatus.isOnline || IS_PROD || IS_STAGING));
+  const [task, setTask] = useState("");
   const [applyError, setApplyError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
 
@@ -59,9 +61,15 @@ export function DemoSection() {
   const run = demoMode ? simulation.run : realRun.run;
   const isLoading = demoMode ? simulation.isRunning : realRun.isLoading;
 
-  const handleStartDemo = async () => {
+  const handleStartRun = async () => {
+    if (!task.trim()) {
+      toast.error("Please enter a task", {
+        description: "Specify what you want the agent to do."
+      });
+      return;
+    }
+
     setApplyError(null);
-    const task = "Add error handling to the API client";
 
     if (demoMode) {
       toast.info("Starting simulated demo...", {
@@ -139,6 +147,7 @@ export function DemoSection() {
 
   const handleStartPreset = (preset: typeof DEMO_PRESETS[0]) => {
     handleReset();
+    setTask(preset.task);
     setTimeout(() => {
       if (demoMode) {
         simulation.startSimulation(preset.task);
@@ -167,11 +176,11 @@ export function DemoSection() {
       <div className={`container mx-auto px-4 md:px-6 ${demoMode && run ? 'pt-10' : ''}`}>
         <div className="text-center mb-8 md:mb-16">
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-foreground mb-4">
-            See it in <span className="text-gradient">Action</span>
+            AI Agent <span className="text-gradient">Workspace</span>
           </h2>
           <p className="text-sm md:text-base text-muted-foreground max-w-2xl mx-auto mb-6 md:mb-8 px-4">
-            The agent generates structured plans, creates reviewable diffs,
-            and clearly explains its reasoning and potential risks.
+            Describe a task for the agent to perform. It will analyze your code,
+            plan the changes, and propose a pull-request quality diff for your review.
           </p>
 
           {/* Mode toggle and status */}
@@ -236,21 +245,36 @@ export function DemoSection() {
             )}
           </div>
 
-          {/* Preset task buttons (Seed Flow) */}
-          <div className="flex flex-wrap gap-2 justify-center mb-8">
-            {DEMO_PRESETS.map((preset) => (
-              <Button
-                key={preset.label}
-                variant="outline"
-                size="sm"
-                className="text-xs rounded-full border-terminal-green/20 hover:border-terminal-green/50 hover:bg-terminal-green/5 transition-all"
-                onClick={() => handleStartPreset(preset)}
-                disabled={(!demoMode && !runnerStatus.isOnline) || isLoading}
-              >
-                <Zap className="w-3 h-3 mr-1 text-terminal-green" />
-                {preset.label}
-              </Button>
-            ))}
+          {/* Task Input Section */}
+          <div className="max-w-3xl mx-auto mb-8">
+            <div className="relative group">
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-terminal-green/20 to-terminal-cyan/20 rounded-xl blur opacity-30 group-focus-within:opacity-100 transition duration-1000"></div>
+              <div className="relative">
+                <Textarea
+                  placeholder="E.g., Add a new utility function to src/lib/utils.ts that formats currency..."
+                  className="min-h-[120px] bg-card/50 border-border/50 rounded-xl text-base md:text-lg p-4 focus:ring-terminal-green/30 focus:border-terminal-green/30 transition-all resize-none shadow-sm"
+                  value={task}
+                  onChange={(e) => setTask(e.target.value)}
+                  disabled={isLoading || (!!run && !["completed", "failed", "approved", "cancelled"].includes(run.status))}
+                />
+
+                {/* Preset task buttons (Small chips below textarea) */}
+                <div className="flex flex-wrap gap-2 mt-3 pl-1">
+                  <span className="text-xs text-muted-foreground py-1 mr-1">Suggestions:</span>
+                  {DEMO_PRESETS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      className="text-xs px-2.5 py-1 rounded-full border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-terminal-green/30 text-muted-foreground hover:text-foreground transition-all flex items-center gap-1"
+                      onClick={() => handleStartPreset(preset)}
+                      disabled={isLoading}
+                    >
+                      <Zap className="w-3 h-3 text-terminal-green" />
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-3 md:gap-4 justify-center">
@@ -258,17 +282,17 @@ export function DemoSection() {
               <Button
                 variant="hero"
                 size="lg"
-                className="md:px-8 group"
-                onClick={handleStartDemo}
-                disabled={isLoading}
+                className="md:px-12 group h-14 text-lg"
+                onClick={handleStartRun}
+                disabled={isLoading || !task.trim()}
               >
-                <Play className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
-                {isLoading ? "Preparing..." : demoMode ? "Start Demo Flow" : "Start Live Run"}
+                <Play className="w-5 h-5 mr-3 group-hover:scale-110 transition-transform" />
+                {isLoading ? "Analyzing..." : demoMode ? "Simulate Task" : "Run Task Now"}
               </Button>
             ) : run && (
-              <Button variant="outline" size="lg" onClick={handleReset} className="md:px-8">
+              <Button variant="outline" size="lg" onClick={handleReset} className="md:px-8 h-12">
                 <RotateCcw className="w-4 h-4 mr-2" />
-                Reset Demo
+                Start New Task
               </Button>
             )}
           </div>

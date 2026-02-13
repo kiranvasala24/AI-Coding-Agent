@@ -1,0 +1,15 @@
+﻿
+C:\Users\kiran\OneDrive\Desktop\Github Projects\AI-Coding-Agent\apps\runner\src\runner.ts
+  128:39  error  Unexpected any. Specify a different type                   @typescript-eslint/no-explicit-any
+  257:19  error  Unexpected any. Specify a different type                   @typescript-eslint/no-explicit-any
+  261:9   error  'failureSummary' is never reassigned. Use 'const' instead  prefer-const
+
+C:\Users\kiran\OneDrive\Desktop\Github Projects\AI-Coding-Agent\scripts\test-rate-limit.ts
+  51:25  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\Users\kiran\OneDrive\Desktop\Github Projects\AI-Coding-Agent\scripts\trigger-cleanup.ts
+  41:21  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+Γ£û 5 problems (5 errors, 0 warnings)
+  1 error and 0 warnings potentially fixable with the `--fix` option.
+

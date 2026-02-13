@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useRunnerStatus } from "@/hooks/use-runner-status";
-import { 
-  Check, 
-  Copy, 
-  ExternalLink, 
-  Loader2, 
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  Loader2,
   RefreshCw,
   CheckCircle2,
   XCircle,
@@ -40,8 +40,8 @@ export function RunnerSetupWizard({ trigger, open, onOpenChange }: RunnerSetupWi
   const envTemplate = `# Runner Configuration
 REPO_PATH=/absolute/path/to/your/repo
 SUPABASE_URL=${supabaseUrl}
-SUPABASE_SERVICE_KEY=<your-service-role-key>
-RUNNER_TOKEN=<shared-secret-from-supabase-secrets>
+SUPABASE_SERVICE_KEY=sb_secret_your_service_role_key
+RUNNER_TOKEN=<your-runner-token>
 RUNNER_PORT=8787
 
 # Optional
@@ -62,10 +62,10 @@ COMMAND_TIMEOUT_MS=120000`;
   const testConnection = async () => {
     setTesting(true);
     setTestResult(null);
-    
+
     // Just check if we have a recent heartbeat
     await new Promise(r => setTimeout(r, 1000));
-    
+
     if (status.isOnline) {
       setTestResult('success');
       toast.success("Runner is connected and online!");
@@ -73,7 +73,7 @@ COMMAND_TIMEOUT_MS=120000`;
       setTestResult('error');
       toast.error("Runner not detected. Make sure it's running.");
     }
-    
+
     setTesting(false);
   };
 
@@ -119,7 +119,7 @@ COMMAND_TIMEOUT_MS=120000`;
               <p className="text-sm text-muted-foreground">
                 Create <code className="bg-muted px-1.5 py-0.5 rounded text-xs">apps/runner/.env</code> with:
               </p>
-              
+
               <div className="relative">
                 <pre className="bg-muted/50 rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre">
                   {envTemplate}
@@ -139,14 +139,14 @@ COMMAND_TIMEOUT_MS=120000`;
               </div>
 
               <div className="grid gap-2 text-xs">
-                <EnvKeyInfo 
-                  name="SUPABASE_URL" 
+                <EnvKeyInfo
+                  name="SUPABASE_URL"
                   value={supabaseUrl}
                   onCopy={() => copyToClipboard(supabaseUrl, "SUPABASE_URL")}
                   copied={copied === "SUPABASE_URL"}
                 />
-                <EnvKeyInfo 
-                  name="Project ID" 
+                <EnvKeyInfo
+                  name="Project ID"
                   value={projectId}
                   onCopy={() => copyToClipboard(projectId, "Project ID")}
                   copied={copied === "Project ID"}
@@ -155,29 +155,29 @@ COMMAND_TIMEOUT_MS=120000`;
                 <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
                   <div>
                     <span className="font-mono text-terminal-yellow">RUNNER_TOKEN</span>
-                    <span className="text-muted-foreground ml-2">→ Get from Cloud secrets</span>
+                    <span className="text-muted-foreground ml-2">→ Match with Supabase Secret</span>
                   </div>
-                  <a 
-                    href="https://lovable.dev" 
-                    target="_blank" 
+                  <a
+                    href={`https://supabase.com/dashboard/project/${projectId}/settings/functions`}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline flex items-center gap-1"
                   >
-                    Open Settings <ExternalLink className="w-3 h-3" />
+                    Set in Supabase <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
                 <div className="flex items-center justify-between p-2 bg-muted/30 rounded">
                   <div>
                     <span className="font-mono text-terminal-yellow">SUPABASE_SERVICE_KEY</span>
-                    <span className="text-muted-foreground ml-2">→ Service role key</span>
+                    <span className="text-muted-foreground ml-2">→ Project Service Role Key</span>
                   </div>
-                  <a 
-                    href="https://lovable.dev" 
-                    target="_blank" 
+                  <a
+                    href={`https://supabase.com/dashboard/project/${projectId}/settings/api`}
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary hover:underline flex items-center gap-1"
                   >
-                    Open Settings <ExternalLink className="w-3 h-3" />
+                    Get API Key <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
               </div>
@@ -197,8 +197,8 @@ COMMAND_TIMEOUT_MS=120000`;
           {/* Step 4: Test connection */}
           <SetupStep number={4} title="Test connection">
             <div className="flex items-center gap-4">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={testConnection}
                 disabled={testing}
                 className="flex-1"
@@ -210,7 +210,7 @@ COMMAND_TIMEOUT_MS=120000`;
                 )}
                 Test Connection
               </Button>
-              
+
               <div className="flex items-center gap-2 text-sm">
                 {testResult === 'success' && (
                   <span className="flex items-center gap-1 text-terminal-green">
@@ -318,16 +318,16 @@ function CodeBlock({ children, onCopy }: { children: string; onCopy: () => void 
   );
 }
 
-function EnvKeyInfo({ 
-  name, 
-  value, 
-  onCopy, 
+function EnvKeyInfo({
+  name,
+  value,
+  onCopy,
   copied,
-  hint 
-}: { 
-  name: string; 
-  value: string; 
-  onCopy: () => void; 
+  hint
+}: {
+  name: string;
+  value: string;
+  onCopy: () => void;
   copied: boolean;
   hint?: string;
 }) {

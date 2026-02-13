@@ -88,21 +88,16 @@ function dbToPatch(row: DbPatch): Patch {
 }
 
 export async function createRun(task: string): Promise<{ runId: string }> {
-  const response = await fetch(`${FUNCTIONS_URL}/runs`, {
+  const { data, error } = await supabase.functions.invoke("runs", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    },
-    body: JSON.stringify({ task }),
+    body: { task },
   });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Failed to create run");
+  if (error) {
+    throw new Error(error.message || "Failed to create run");
   }
 
-  return response.json();
+  return data;
 }
 
 export async function getRun(runId: string): Promise<Run | null> {
@@ -130,16 +125,12 @@ export async function listRuns(limit = 50): Promise<Run[]> {
 }
 
 export async function cancelRun(runId: string): Promise<void> {
-  const response = await fetch(`${FUNCTIONS_URL}/runs/${runId}/cancel`, {
+  const { error } = await supabase.functions.invoke(`runs/${runId}/cancel`, {
     method: "POST",
-    headers: {
-      "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    },
   });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Failed to cancel run");
+  if (error) {
+    throw new Error(error.message || "Failed to cancel run");
   }
 }
 
@@ -149,18 +140,13 @@ export async function approveRun(
   approvedBy?: string,
   reason?: string
 ): Promise<void> {
-  const response = await fetch(`${FUNCTIONS_URL}/runs/${runId}/approve`, {
+  const { error } = await supabase.functions.invoke(`runs/${runId}/approve`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-    },
-    body: JSON.stringify({ approved, approvedBy, reason }),
+    body: { approved, approvedBy, reason },
   });
 
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || "Failed to approve run");
+  if (error) {
+    throw new Error(error.message || "Failed to approve run");
   }
 }
 

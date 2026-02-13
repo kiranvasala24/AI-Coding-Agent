@@ -15,8 +15,10 @@ import {
   supabase
 } from './supabase';
 import { listFiles, search, openFile, getRepoInfo } from './tools/repo';
+import { extractSymbols, lookupSymbol, SymbolInfo } from './tools/indexer';
 import { runVerification } from './tools/verify';
 import { watchForApprovals } from './tools/patch';
+import { assessRisk } from './tools/risk';
 
 interface RunContext {
   runId: string;
@@ -109,11 +111,21 @@ export async function executeRun(runId: string, task: string) {
       searchResults = searchResults.concat((results as unknown as SearchResult[]) || []);
     }
 
-    // Tool 4: Open top matching file if found
+    // Tool 4: Open top matching file if found and extract symbols
     if (searchResults.length > 0) {
       const topFile = searchResults[0].file;
       await emitToolCall(runId, 'repo.open', { file: topFile }, toolCalls, async () => {
         return await openFile(topFile, 1, 50);
+      });
+
+      // Extract symbols from the top file to understand structure
+      const symbols = await emitToolCall(runId, 'indexer.extract', { file: topFile }, toolCalls, async () => {
+        return await extractSymbols(topFile);
+      });
+
+      // Add symbols to run metadata
+      await updateRun(runId, {
+        impacted_symbols: (symbols as SymbolInfo[] || []).map(s => `${s.kind} ${s.name}`).slice(0, 20)
       });
     }
 
@@ -199,10 +211,15 @@ export async function executeRun(runId: string, task: string) {
 
       console.log(`[runner] Created patch ${patchId}`);
 
-      // Update run with patch reference
+      // Risk Assessment
+      const risk = assessRisk(filesChanged, task);
+      console.log(`[runner] Risk Assessment: ${risk.score.toUpperCase()}`);
+
+      // Update run with patch reference and risk
       await updateRun(runId, {
         status: 'awaiting_approval',
         patches: [{ patchId, summary: patchSummary }],
+        risk_assessment: risk,
       });
 
       await postEvents(runId, [{
@@ -210,6 +227,7 @@ export async function executeRun(runId: string, task: string) {
         payload: {
           patchId,
           reason: 'Verification passed, patch ready for review',
+          riskScore: risk.score,
         },
       }]);
 
@@ -239,20 +257,34 @@ export async function executeRun(runId: string, task: string) {
   } catch (error) {
     console.error('[runner] Run failed:', error);
 
+    // Smarter failure analysis
+    const failureSummary = error instanceof Error ? error.message : String(error);
+    let category: 'analysis' | 'verification' | 'environment' | 'unknown' = 'unknown';
+
+    if (failureSummary.includes('Verification failed')) {
+      category = 'verification';
+    } else if (failureSummary.includes('Path traversal') || failureSummary.includes('denylist')) {
+      category = 'environment';
+    } else if (failureSummary.includes('TypeScript') || failureSummary.includes('token')) {
+      category = 'analysis';
+    }
+
     await postEvents(runId, [{
-      type: 'ERROR',
+      type: 'RUN_FAILED',
       payload: {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
+        reason: failureSummary,
+        category,
+        recoverable: category === 'verification' || category === 'analysis'
       },
     }]);
 
     await updateRun(runId, {
       status: 'failed',
       error: {
-        message: error instanceof Error ? error.message : String(error),
-        phase: 'execution',
-        recoverable: false,
+        message: failureSummary,
+        phase: isProcessing ? 'execution' : 'setup',
+        recoverable: category !== 'environment',
+        category
       },
     });
   } finally {

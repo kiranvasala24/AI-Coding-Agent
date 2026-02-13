@@ -38,8 +38,8 @@ async function triggerCleanup() {
         } else {
             console.error(`\n❌ Cleanup failed: ${data.error}`);
         }
-    } catch (error: any) {
-        console.error(`\n❌ Network error: ${error.message}`);
+    } catch (error) {
+        console.error(`\n❌ Network error: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 

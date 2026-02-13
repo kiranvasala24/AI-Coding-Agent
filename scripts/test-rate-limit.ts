@@ -48,8 +48,8 @@ async function testRateLimit() {
             if (status === 429) {
                 console.log("✅ Successfully hit rate limit!");
             }
-        } catch (error: any) {
-            console.log(`Error: ${error.message}`);
+        } catch (error) {
+            console.log(`Error: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
